@@ -2,6 +2,7 @@ from datetime import datetime
 
 import pandas as pd
 import plotly.graph_objects as go
+
 import streamlit as st
 
 from _shared.path import path
@@ -14,17 +15,7 @@ from estimativa_prognostico_geracao.prever import (
     preparar_dados,
 )
 
-
-def create_streamlit_app():
-    st.set_page_config(page_title="Previsão de Geração Solar", layout="wide")
-
-    # Header with logo and title
-    col1, col2 = st.columns([1, 4])
-    with col1:
-        st.image("_shared/images/solarz_logo.png")
-    with col2:
-        st.title("Previsão de Geração Solar")
-
+def previsao():
     st.write("Selecione os dados e gere previsões de energia solar")
 
     # File selection via radio buttons
@@ -146,7 +137,3 @@ def create_streamlit_app():
 
     except Exception as e:
         st.error(f"Erro ao carregar o arquivo: {str(e)}")
-
-
-if __name__ == "__main__":
-    create_streamlit_app()
