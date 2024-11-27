@@ -2,6 +2,7 @@ import streamlit as st
 import logging
 
 from app.tabs.previsao import previsao
+from app.tabs.estimativa_desempenho_atual_tab import estimativa_desempenho_atual
 
 def main():
     st.title("ETAL - SolaZ Hackathon 2024")
@@ -12,7 +13,7 @@ def main():
         previsao()
 
     with estimativa_desempenho_atual_tab:
-        ...
+        estimativa_desempenho_atual()
 
 
 
