@@ -12,8 +12,8 @@ def main():
     with previsao_tab:
         previsao()
 
-    with estimativa_desempenho_atual_tab:
-        estimativa_desempenho_atual()
+    # with estimativa_desempenho_atual_tab:
+    #     estimativa_desempenho_atual()
 
 
 
