@@ -1,3 +1,4 @@
+import PyQt5
 import math
 import pandas as pd
 import warnings
@@ -9,30 +10,42 @@ matplotlib.use("QtAgg")
 
 import matplotlib.pyplot as plt
 
+
+def is_invalid(row):
+  return math.isnan(row['potencia']) or row['potencia'] <= 0 or math.isnan(row['quantidade']) or row['quantidade'] <= 0 or math.isnan(row['prognostico']) or row['prognostico'] <= 0
+
 # Gerar o gráfico de desempenho de uma usina
 ID_USINA = 18175
 
 quantidade = [0] * 26
 prognostico = [0] * 26
 
-for index in range(528):
-  table = pq.read_table(
-      f'mossoro/geracao-{index}.parquet',
-      columns=['id_usina', 'data', 'quantidade', 'prognostico'],
-      filters=[('id_usina', '==', ID_USINA)]
-  )
-  geracao = table.to_pandas()
+table = pq.read_table(
+    './_data/geracao_mossoro.parquet',
+    columns=['id_usina', 'data', 'quantidade', 'prognostico', 'potencia'],
+    filters=[('id_usina', '==', ID_USINA)]
+)
+geracao = table.to_pandas()
 
-  for _, row in geracao.iterrows():
+for _, row in geracao.iterrows():
 
-    ano, _, _ = row['data'].split('-')
-    prognostico[int(ano) % 1999] += row['prognostico']
-    quantidade[int(ano) % 1999] += row['quantidade']
+  if is_invalid(row):
+    continue
+
+  potencia_maxima_dia = row['potencia'] * 24
+
+  # Detectar anomalias
+  if row['prognostico'] > potencia_maxima_dia or row['quantidade'] > potencia_maxima_dia:
+    continue
+
+  ano, _, _ = row['data'].split('-')
+  prognostico[int(ano) % 1999] += row['prognostico']
+  quantidade[int(ano) % 1999] += row['quantidade']
 
 
+# Computar o prognóstico considerando a depreciação
 first_year_index = -1
 prognostico_real = [0] * 26
-
 for index in range(len(prognostico)):
 
   if float(prognostico[index]) > 0:
@@ -49,9 +62,9 @@ for index in range(len(prognostico)):
       )
 
 
+# Computar a eficiência
 anos = []
 dados = []
-
 for index in range(len(prognostico_real)):
   anos.append(index + 1999)
 
@@ -59,13 +72,13 @@ for index in range(len(prognostico_real)):
     dados.append(0)
   else:
     valor = quantidade[index] / prognostico_real[index]
-    dados.append("%.2f" % valor)
+    dados.append(float("%.2f" % valor))
 
 
+# Comparar eficiência ao longo dos anos
 defeituoso = False
 BAIXA_MINIMA = 0.05
 BAIXA_MAXIMA = 0.1
-
 for index in range(len(dados) - 3):
   contagem = 0
 
@@ -86,7 +99,8 @@ for index in range(len(dados) - 3):
   if contagem == 3:
     defeituoso = True
 
-plt.plot(anos, [float(x) for x in dados], 'ro')
+
+plt.plot(anos, dados, 'ro')
 plt.grid()
-plt.savefig(f"usinas/mossoro/{'defeito' if defeituoso else 'comum'}/{ID_USINA}.png")
+plt.savefig(f"./analise_depreciacao/usinas/{'defeito' if defeituoso else 'comum'}/{ID_USINA}.png")
 plt.clf()

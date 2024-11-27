@@ -1,3 +1,4 @@
+import PyQt5
 import math
 import pandas as pd
 import warnings
@@ -9,30 +10,43 @@ matplotlib.use("QtAgg")
 
 import matplotlib.pyplot as plt
 
+
+def is_invalid(row):
+  return math.isnan(row['potencia']) or row['potencia'] <= 0 or math.isnan(row['quantidade']) or row['quantidade'] <= 0 or math.isnan(row['prognostico']) or row['prognostico'] <= 0
+
 # Gerar o gráfico de desempenho de usinas
 id_usinas_analisadas = []
 TOTAL_USINAS_ANALISADAS = 0
-NUMERO_USINAS = 100
+NUMERO_USINAS = 10
 
 
 def calcular_desempenho(id_usina, TOTAL_USINAS_ANALISADAS):
   quantidade = [0] * 26
   prognostico = [0] * 26
   
-  for index in range(528):
-    table = pq.read_table(
-      f'mossoro/geracao-{index}.parquet',
-      columns=['id_usina', 'data', 'quantidade', 'prognostico'],
-      filters=[('id_usina', '==', id_usina)]
-    )
-    geracao = table.to_pandas()
+  table = pq.read_table(
+    './_data/geracao_mossoro.parquet',
+    columns=['id_usina', 'data', 'quantidade', 'prognostico', 'potencia'],
+    filters=[('id_usina', '==', id_usina)]
+  )
+  geracao = table.to_pandas()
 
-    for _, row in geracao.iterrows():
+  for _, row in geracao.iterrows():
 
-      ano, _, _ = row['data'].split('-')
-      prognostico[int(ano) % 1999] += row['prognostico']
-      quantidade[int(ano) % 1999] += row['quantidade']
+    if is_invalid(row):
+      continue
 
+    potencia_maxima_dia = row['potencia'] * 24
+
+    # Detectar anomalias
+    if row['prognostico'] > potencia_maxima_dia or row['quantidade'] > potencia_maxima_dia:
+      continue
+
+    ano, _, _ = row['data'].split('-')
+    prognostico[int(ano) % 1999] += row['prognostico']
+    quantidade[int(ano) % 1999] += row['quantidade']
+
+  # Verificar se há dados de anos o suficiente
   anos_ativos = 0
   for valor in quantidade:
     if valor > 0:
@@ -69,7 +83,7 @@ def calcular_desempenho(id_usina, TOTAL_USINAS_ANALISADAS):
       dados.append(0)
     else:
       valor = quantidade[index] / prognostico_real[index]
-      dados.append("%.2f" % valor)
+      dados.append(float("%.2f" % valor))
 
 
   defeituoso = False
@@ -96,30 +110,26 @@ def calcular_desempenho(id_usina, TOTAL_USINAS_ANALISADAS):
     if contagem == 3:
       defeituoso = True
 
-  plt.plot(anos, [float(x) for x in dados], 'ro')
+  plt.plot(anos, dados, 'ro')
   plt.grid()
-  plt.savefig(f"usinas/mossoro/{'defeito' if defeituoso else 'comum'}/{id_usina}.png")
+  plt.savefig(f"./analise_depreciacao/usinas/{'defeito' if defeituoso else 'comum'}/{id_usina}.png")
   plt.clf()
 
   return TOTAL_USINAS_ANALISADAS + 1
 
 
-for index in range(528):
-  table = pq.read_table(
-    f'mossoro/geracao-{index}.parquet',
-    columns=['id_usina']
-  )
-  geracao = table.to_pandas()
+table = pq.read_table(
+  './_data/geracao_mossoro.parquet',
+  columns=['id_usina']
+)
+geracao = table.to_pandas()
 
+for _, row in geracao.iterrows():
   if TOTAL_USINAS_ANALISADAS == NUMERO_USINAS:
     break
 
-  for _, row in geracao.iterrows():
-    if TOTAL_USINAS_ANALISADAS == NUMERO_USINAS:
-      break
-
-    if int(row['id_usina']) not in id_usinas_analisadas:
-      id_usinas_analisadas.append(int(row['id_usina']))
-      TOTAL_USINAS_ANALISADAS = calcular_desempenho(int(row['id_usina']), TOTAL_USINAS_ANALISADAS)
-    else:
-      continue
+  if int(row['id_usina']) not in id_usinas_analisadas:
+    id_usinas_analisadas.append(int(row['id_usina']))
+    TOTAL_USINAS_ANALISADAS = calcular_desempenho(int(row['id_usina']), TOTAL_USINAS_ANALISADAS)
+  else:
+    continue
