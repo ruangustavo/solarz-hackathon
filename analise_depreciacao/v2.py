@@ -15,6 +15,9 @@ RESULTADO: Aumentou o numero de outliers.
 
 6. Analisar QUANDO realmente é um outlier ou não (melhorar a solução para identificar isso) talvez seja necessario utilizar o codigo de
 outra frente para identificar uma media ou z-score para identificar se ta muito fora do normal.
+
+7. Nao faz sentido marcar com outlier em alguns casos pois o deficit é positivo, ou seja, se o calculo é com base no prognostico nao da para admitir 
+que ele seja totalmente preciso. é preciso com um valor percentual de erro para esse caso.
 """
 
 def remove_milliseconds(date_str):
