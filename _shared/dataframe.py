@@ -1,4 +1,5 @@
 import dask.dataframe as dd
+import pandas as pd
 
 def load_data(file_path: str) -> dd.DataFrame:
     """
@@ -45,3 +46,40 @@ def drop_columns(df: dd.DataFrame, columns: list) -> dd.DataFrame:
     :return: DataFrame with dropped columns.
     """
     return df.drop(columns=columns)
+
+def _remove_milliseconds(date_str):
+    if pd.isna(date_str):
+        return date_str
+    if '.' in date_str:
+        date_str = date_str.split('.')[0]
+    return date_str
+
+
+def clean_date_columns(df: pd.DataFrame, date_columns: list) -> pd.DataFrame:
+    """
+    Limpa e formata colunas de tipo date ou datetime em um DataFrame.
+
+    Args:
+        df (pd.DataFrame): O DataFrame a ser processado.
+        date_columns (list): Lista de colunas a serem tratadas como datas.
+        remove_milliseconds_func (function): Função para remover milissegundos.
+
+    Returns:
+        pd.DataFrame: O DataFrame com as colunas de datas tratadas.
+    """
+    for col in date_columns:
+        # Manter os dados originais em uma nova coluna
+        raw_col = f"{col}_raw"
+        cleaned_col = f"{col}_cleaned"
+        df[raw_col] = df[col]
+        
+        # Converter para datetime, tratando erros
+        df[col] = pd.to_datetime(df[col], errors='coerce')
+        
+        # Identificar valores NaT e aplicar a função remove_milliseconds
+        mask_nat = df[col].isna()
+        if mask_nat.any():
+            df.loc[mask_nat, cleaned_col] = df.loc[mask_nat, raw_col].apply(_remove_milliseconds)
+            df.loc[mask_nat, col] = pd.to_datetime(df.loc[mask_nat, cleaned_col], errors='coerce')
+    
+    return df

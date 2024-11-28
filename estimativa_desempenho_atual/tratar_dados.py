@@ -1,11 +1,15 @@
 import pandas as pd
 import os
+from _shared.dataframe import clean_date_columns
+
+from _shared.path import path
 
 def load_and_clean_data(file_path: str, clean_function):
     """
     Carrega um arquivo CSV e aplica uma função de limpeza específica.
     """
     df = pd.read_csv(file_path)
+
     return clean_function(df)
 
 def clean_unidade_consumidora(df: pd.DataFrame) -> pd.DataFrame:
@@ -29,9 +33,15 @@ def clean_usina_historico(df: pd.DataFrame) -> pd.DataFrame:
     """
     Limpa os dados de histórico de usina.
     """
-    df['start_date'] = pd.to_datetime(df['start_date'], errors='coerce')
-    df = df.dropna(subset=['performance'])
-    df = df.drop(columns=['performance_type_enum'])
+    # Limpar a coluna 'start_date' usando a função genérica
+    df = clean_date_columns(df, ['start_date'])
+
+    # Remover linhas sem plant_id
+    df = df.dropna(subset=['plant_id'])
+    
+    # Remover coluna desnecessária
+    df = df.drop(columns=['performance_type_enum'], errors='ignore')
+    
     return df
 
 def clean_endereco(df: pd.DataFrame) -> pd.DataFrame:
@@ -53,6 +63,11 @@ def clean_cidade(df: pd.DataFrame) -> pd.DataFrame:
     df["id_estado"] = df["id_estado"].astype(int)
     df["id"] = df["id"].astype(int)
     df = df.drop(columns=["created_at"])
+
+    df = df.rename(columns={
+        "nome": "cidade_nome",
+    })
+
     return df
 
 def merge_data(usina, unidade_consumidora, endereco, cidade):
@@ -97,19 +112,15 @@ def filter_and_merge_usina_historico(usina, usina_historico, cidade_nome: str) -
     ids_usinas_filtradas = usinas_filtradas['id']
 
     historico_usinas_filtradas = usina_historico[usina_historico['plant_id'].isin(ids_usinas_filtradas)]
+
     historico_usinas_filtradas = historico_usinas_filtradas.dropna(subset=['plant_id'])
 
     historico_usinas_sorted = historico_usinas_filtradas.sort_values(by=['plant_id', 'start_date'])
 
     historico_usina_atual = historico_usinas_sorted.groupby('plant_id').last().reset_index()
 
-    historico_usina_atual = historico_usina_atual.rename(columns={
-        'power': 'current_power',
-        'start_date': 'last_update'
-    })
-
     usina_com_potencia_atual = usinas_filtradas.merge(
-        historico_usina_atual[['plant_id', 'current_power', 'last_update']],
+        historico_usina_atual[["power", "start_date", "performance", "plant_id"]],
         left_on='id',
         right_on='plant_id',
         how='left'
@@ -129,13 +140,14 @@ def main(input_dir: str, output_dir: str, cidade_nome):
     usina_merged = merge_data(usina, unidade_consumidora, endereco, cidade)
     usina_filtered = filter_and_merge_usina_historico(usina_merged, usina_historico, cidade_nome)
 
-    file_path = f"{output_dir}/usina_{cidade_nome.lower()}_merged.csv"
+    print(usina_filtered.head())
+    file_path = f"{output_dir}/usina_{cidade_nome.lower()}_potencia.csv"
     usina_filtered.to_csv(file_path, index=False)
     print("Pipeline concluída! Arquivo salvo em:", file_path)
 
 
 if __name__ == "__main__":
-    INPUT_DIR = "data"
-    OUTPUT_DIR = "cleaned"
-    CIDADE = "Natal"
+    INPUT_DIR = path()
+    OUTPUT_DIR = path()
+    CIDADE = "Mossoró"
     main(INPUT_DIR, OUTPUT_DIR, CIDADE)
