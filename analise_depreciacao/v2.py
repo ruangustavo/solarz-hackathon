@@ -31,19 +31,24 @@ def remove_milliseconds(date_str):
 generation = pd.read_csv(path('geracao_mossoro.csv'))  # contains id_usina, data, quantidade, prognostico
 usina_history = pd.read_csv(path('usina_historico.csv'))  # contains power, plant_id, start_date
 
-def calculate_expected_generation(start_year, start_prognostico, years_active):
+def calculate_expected_generation_year_by_year(actual_first_year, depreciation_rate, years_active):
+    """Calculates the expected generation year by year."""
     expected_generation = {}
-    current_generation = start_prognostico
+    current_generation = actual_first_year
+
     for year in range(years_active):
         if year == 0:
-            depreciation_rate = 0.025  # 2.5% for Year 1
+            depreciation_rate = 0.025  # 2.5% for 1st Year
         else:
             depreciation_rate = 0.005  # 0.5% for subsequent years
         current_generation *= (1 - depreciation_rate)
-        expected_generation[start_year + year] = current_generation
+        expected_generation[year] = current_generation
+
     return expected_generation
 
-def process_generation_data(generation, usina_history):
+
+def process_generation_data_optimized(generation, usina_history):
+    # Merge and preprocess
     merged = pd.merge(
         generation,
         usina_history,
@@ -51,59 +56,46 @@ def process_generation_data(generation, usina_history):
         right_on='plant_id'
     )
 
-    print('Total antes da filtragem', merged.shape[0])
-
-    merged['start_date_raw'] = merged['start_date']
-
     # Convert dates
     merged['data'] = pd.to_datetime(merged['data'], errors='coerce')
     merged['start_date'] = pd.to_datetime(merged['start_date'], errors='coerce')
 
-    mask_nat = merged['start_date'].isna()
-    merged.loc[mask_nat, 'start_date_cleaned'] = merged.loc[mask_nat, 'start_date_raw'].apply(remove_milliseconds)
-    merged.loc[mask_nat, 'start_date'] = pd.to_datetime(merged.loc[mask_nat, 'start_date_cleaned'], errors='coerce')
-
-    # Group by plant and year
-    merged['year'] = merged['data'].dt.year.astype(int)
+    # Filter and prepare data
+    merged['year'] = merged['data'].dt.year
     grouped_plants = merged.groupby('plant_id')
 
-    
-    # Analyze each plant
     results = []
-    for plant_id, plant_group in grouped_plants:
-        # Sort the plant data by date to ensure chronological order
-        plant_group = plant_group.sort_values('data')
 
-        # Get the start date and start year of the plant
-        plant_start_data = plant_group.iloc[0]
-        start_date = plant_start_data['start_date']
+    # Analyze each plant
+    for plant_id, plant_group in grouped_plants:
+        plant_group = plant_group.sort_values('data')
+        start_date = plant_group['start_date'].iloc[0]
         start_year = start_date.year
 
-        # Sum 'prognostico' for the start year
-        start_prognostico = plant_group[plant_group['year'] == start_year]['prognostico'].sum()
+        # Get actual generation for the first year
+        actual_first_year = plant_group[plant_group['year'] == start_year]['quantidade'].sum()
 
-        if pd.isna(start_prognostico) or start_prognostico == 0:
-            print(f"Invalid 'start_prognostico' for plant_id {plant_id} in start year {start_year}. Skipping this plant.")
+        if actual_first_year <= 0:
+            print(f"Skipping plant {plant_id} due to invalid actual generation in the first year.")
             continue
 
-        # Process each year for the plant
+        # Calculate expected generation year by year
+        years_active = plant_group['year'].max() - start_year + 1
+        expected_by_year = calculate_expected_generation_year_by_year(actual_first_year, 0.025, years_active)
+
+        # Process each year
         for year, year_group in plant_group.groupby('year'):
             actual_generation = year_group['quantidade'].sum()
-
-            # Calculate expected generation based on depreciation
-            years_active = year - start_year + 1
-            expected_by_year = calculate_expected_generation(start_year, start_prognostico, years_active)
+            years_since_start = year - start_year
 
             # Expected generation for current year
-            expected_for_year = expected_by_year.get(year, 0)
+            expected_for_year = expected_by_year.get(years_since_start, 0)
             deficit = expected_for_year - actual_generation
 
             # Determine status
-            if actual_generation > expected_for_year:
-                status = 'Outlier'
-            elif year == start_year and deficit > (0.025 * expected_for_year):
+            if years_since_start == 0 and deficit > (0.025 * expected_for_year):
                 status = 'Underperformance (Year 1)'
-            elif year > start_year and deficit > (0.005 * expected_for_year):
+            elif years_since_start > 0 and deficit > (0.005 * expected_for_year):
                 status = 'Underperformance (Subsequent Years)'
             else:
                 status = 'Normal'
@@ -119,7 +111,7 @@ def process_generation_data(generation, usina_history):
 
     return pd.DataFrame(results)
 
-results = process_generation_data(generation, usina_history)
+results = process_generation_data_optimized(generation, usina_history)
 results.to_csv(path('results_analise_depreciacao.csv'), index=False)
 
 print(results.shape[0])
