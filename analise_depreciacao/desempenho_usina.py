@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 
 
 def is_invalid(row):
-  return math.isnan(row['potencia']) or row['potencia'] <= 0 or math.isnan(row['quantidade']) or row['quantidade'] <= 0 or math.isnan(row['prognostico']) or row['prognostico'] <= 0
+  return math.isnan(row['potencia']) or row['potencia'] <= 0 or math.isnan(row['quantidade']) or row['quantidade'] < 0 or math.isnan(row['prognostico']) or row['prognostico'] < 0
 
 # Gerar o gráfico de desempenho de uma usina
 ID_USINA = 18175
