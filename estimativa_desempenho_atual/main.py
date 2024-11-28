@@ -58,36 +58,72 @@ if __name__ == "__main__":
 
         max_power = usinas['power'].max()
         bins = np.arange(0, max_power + 5, 5)
-        # usinas['power_range'] = usinas['power'].map_partitions(pd.cut, bins=bins)
         usinas['power_range'] = pd.cut(usinas['power'], bins=bins)
 
         logging.info("Calculando as média e variancia esperada por faixa de potência e cidade...")
 
-        media_geracao_por_grupo = (
+        media_e_desvio_geracao_por_grupo = (
             usinas.groupby(['power_range'])['quantidade']
-            .mean()
+            .agg(['mean', 'std', 'count'])
+            .rename(columns={'mean': 'media_esperada', 'std': 'std_esperada'})
             .reset_index()
         )
 
-        media_e_desvio_por_grupo = media_geracao_por_grupo.rename(
-            columns={'quantidade': 'media_esperada'}
-        )
+        media_e_desvio_geracao_por_grupo = media_e_desvio_geracao_por_grupo.dropna(subset=['media_esperada', 'power_range'])
 
-        media_e_desvio_por_grupo = media_e_desvio_por_grupo.dropna(subset=['media_esperada', 'power_range'])
-
-        logging.info("Identificando usinas com valor total de geração abaixo do percentual de 80%...")
 
         usinas = usinas.merge(
-            media_e_desvio_por_grupo,
+            media_e_desvio_geracao_por_grupo,
             on='power_range',
             how='left'
         )
 
-        usinas['anomalous'] = usinas['quantidade'] < usinas['media_esperada'] * 0.8
-        usinas_anomalas = usinas[usinas['anomalous']]
-        logging.info(f"Número de usinas anômalas detectadas: {len(usinas_anomalas)}")
+        # Usinas com outliers
+        logging.info("Detecting outliers using the z-score method...")
 
-        media_e_desvio_por_grupo.to_csv(path("geracao_power_range_mossoro.csv"), index=False)
-        usinas.to_csv(path("usinas_power_range_mossoro.csv"), index=False)
+        usinas['z_score'] = (usinas['quantidade'] - usinas['media_esperada']) / usinas['std_esperada']
+
+        # Flag outliers based on z-score
+        # Calculando outliers para valores absurdamento grandes que indicam possiveis erros de cadastro valores maiores positivos maiores que 3
+        outlier_threshold = 3
+        usinas['is_outlier'] = usinas['z_score'] > outlier_threshold 
+        usinas_outliers = usinas[usinas['is_outlier']]
+
+        logging.info("Identificando usinas com valor total de geração abaixo do percentual de 80%...")
+
+        usinas['anomalous'] = usinas['quantidade'] < usinas['media_esperada'] * 0.8
+        usinas_anomalas_com_outliers = usinas[usinas['anomalous']]
+        logging.info(f"Número de usinas anômalas detectadas: {len(usinas_anomalas_com_outliers)}")
+
+        # Usinas sem outliers
+        usinas_cleaned = usinas[~usinas['is_outlier']]
+
+        media_geracao_por_grupo_cleaned = (
+            usinas_cleaned.groupby(['power_range'])['quantidade']
+            .mean()
+            .rename('media_geracao')
+            .reset_index()
+        )
+
+        usinas_cleaned = usinas_cleaned.merge(
+            media_geracao_por_grupo_cleaned,
+            on='power_range',
+            how='left',
+        )
+
+        # Recalculando calculo de anomalias
+        usinas_cleaned['anomalous'] = usinas_cleaned['quantidade'] < usinas_cleaned['media_geracao'] * 0.8
+        usinas_anomalas_cleaned = usinas_cleaned[usinas_cleaned['anomalous']]
+
+        logging.info("Salvando resultados para CSV...")
+
+        media_e_desvio_geracao_por_grupo.to_csv(path("geracao_power_range_mossoro.csv"), index=False)
+        usinas_outliers.to_csv(path("outliers_power_range_mossoro.csv"), index=False)
+
+        usinas.to_csv(path("usinas_power_range_mossoro.csv"), index=False) # calculo com outliers
+        usinas_cleaned.to_csv(path("usinas_cleaned_power_range_mossoro.csv"), index=False) # calculo sem outliers
+
+        usinas_anomalas_com_outliers.to_csv(path("anomalous_power_range_mossoro.csv"), index=False)
+        usinas_anomalas_cleaned.to_csv(path("anomalous_cleaned_power_range_mossoro.csv"), index=False)
 
         logging.info("Processamento concluído com sucesso!")
