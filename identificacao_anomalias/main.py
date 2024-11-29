@@ -27,12 +27,16 @@ if __name__ == "__main__":
         geracao["data"], format="%Y-%m-%d", errors="coerce"
     )
 
-    data_inicio = "2023-01-01"
+    data_inicio = "2024-01-01"
+    data_final = "2024-11-10"
+
     logging.info(
-        f"Aplicando filtro para incluir somente dados de {data_inicio} até a data atual..."
+        f"Aplicando filtro para incluir somente dados de {data_inicio} até {data_final}..."
     )
 
-    geracao = geracao[geracao["data"] >= data_inicio]
+    geracao = geracao[
+        (geracao["data"] >= data_inicio) & (geracao["data"] <= data_final)
+    ]
 
     logging.info("Iniciando o merge dos dataframes...")
     with TqdmCallback(desc="compute") as progress:
@@ -139,7 +143,7 @@ if __name__ == "__main__":
         plt.text(
             0.02,
             0.98,
-            "summary_text",
+            f"Total de usinas: {len(usinas_pd)}\nUsinas normais: {len(normal_usinas)} - {(len(normal_usinas)/len(usinas_pd)*100):.2f}% \nUsinas anômalas: {len(anomalous_usinas)} - {(len(anomalous_usinas)/len(usinas_pd)*100):.2f}%",
             transform=plt.gca().transAxes,
             fontsize=12,
             color="black",
@@ -150,7 +154,6 @@ if __name__ == "__main__":
         plt.xlabel("Potência")
         plt.ylabel("Geração no período")
         plt.title("Dispersão de Z-Scores por Faixa de Potência")
-        plt.xticks(rotation=60)
         plt.legend()
         plt.tight_layout()
 
