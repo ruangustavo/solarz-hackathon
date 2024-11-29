@@ -1,7 +1,8 @@
 import argparse
 
-import matplotlib.pyplot as plt
 import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from prophet import Prophet
 from sklearn.metrics import mean_absolute_percentage_error
 
@@ -68,29 +69,70 @@ def avaliar_modelo(y_true, y_pred):
     return mape * 100
 
 
-def plotar_grafico(previsoes):
-    """
-    Apresenta os resultados das previsões de forma amigável
-    """
-    # Calcula estatísticas importantes
-    try:
-        plt.figure(figsize=(12, 6))
-        plt.plot(previsoes["ds"], previsoes["yhat"], label="Previsão")
-        plt.fill_between(
-            previsoes["ds"],
-            previsoes["yhat_lower"],
-            previsoes["yhat_upper"],
-            alpha=0.2,
-            label="Intervalo de Confiança",
+def plotar_grafico(previsoes_final):
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    fig.add_trace(
+        go.Scatter(
+            x=previsoes_final["data"],
+            y=previsoes_final["previsao"],
+            name="Previsão",
+            line=dict(color="rgb(31, 119, 180)"),
+            hovertemplate="Data: %{x}<br>"
+            + "Geração: %{y:.1f} kWh<br>"
+            + "<extra></extra>",
         )
-        plt.title("Previsão de Geração Solar")
-        plt.xlabel("data")
-        plt.ylabel("Geração (kWh)")
-        plt.legend()
-        plt.savefig("previsao_geracao.png")
-        print("\nGráfico salvo em 'previsao_geracao.png'")
-    except Exception as e:
-        print("\nNão foi possível gerar o gráfico", e)
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=previsoes_final["data"].tolist() + previsoes_final["data"].tolist()[::-1],
+            y=previsoes_final["limite_superior"].tolist()
+            + previsoes_final["limite_inferior"].tolist()[::-1],
+            fill="toself",
+            fillcolor="rgba(31, 119, 180, 0.2)",
+            line=dict(color="rgba(255,255,255,0)"),
+            name="Intervalo de Confiança 95%",
+            hoverinfo="skip",
+            showlegend=True,
+        )
+    )
+
+    fig.update_layout(
+        title="Previsão de Geração Solar",
+        xaxis_title="Data",
+        yaxis_title="Geração (kWh)",
+        hovermode="x unified",
+        plot_bgcolor="white",
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+        ),
+    )
+
+    fig.update_xaxes(
+        showgrid=True,
+        gridwidth=1,
+        gridcolor="rgba(128, 128, 128, 0.2)",
+        showline=True,
+        linewidth=1,
+        linecolor="black",
+    )
+
+    fig.update_yaxes(
+        showgrid=True,
+        gridwidth=1,
+        gridcolor="rgba(128, 128, 128, 0.2)",
+        showline=True,
+        linewidth=1,
+        linecolor="black",
+        rangemode="nonnegative",
+    )
+
+    fig.write_image("previsao_geracao_solar.png")
 
 
 def main():
@@ -132,17 +174,23 @@ def main():
         modelo = criar_modelo_prophet()
         modelo.fit(df_prophet)
 
-        last_date = df_prophet["ds"].max()
+        today = pd.Timestamp.now().normalize()
+        start_date = today + pd.Timedelta(days=1)
         future_dates = pd.date_range(
-            start=last_date + pd.Timedelta(days=1), periods=30, freq="D"
+            start=start_date,
+            periods=30,
+            freq="D",
         )
         futuro = pd.DataFrame({"ds": future_dates})
         previsoes = modelo.predict(futuro)
 
-    POTENCIA_ALVO = 10.495
+    POTENCIA_ALVO = 15
     previsoes_final = desnormalizar_previsao(previsoes, potencia_alvo=POTENCIA_ALVO)
+    previsoes_final = previsoes_final[["ds", "yhat", "yhat_lower", "yhat_upper"]]
+    previsoes_final.columns = ["data", "previsao", "limite_inferior", "limite_superior"]
+    previsoes_final = previsoes_final.round(2)
     previsoes_final.to_csv(f"previsoes_{POTENCIA_ALVO:.0f}kWh.csv", index=False)
-    plotar_grafico(previsoes)
+    plotar_grafico(previsoes_final)
 
 
 if __name__ == "__main__":

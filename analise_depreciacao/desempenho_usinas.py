@@ -1,135 +1,122 @@
-import PyQt5
-import math
-import pandas as pd
 import warnings
-warnings.filterwarnings('ignore')
-import pyarrow.parquet as pq
 
+import numpy as np
+
+warnings.filterwarnings("ignore")
 import matplotlib
+import pandas as pd
+
 matplotlib.use("QtAgg")
 
-import matplotlib.pyplot as plt
+
+def processar_dados_usina(dados_geracao, id_usina):
+    # Filtrar dados inválidos de forma vetorizada
+    mascara_valida = (
+        dados_geracao["potencia"].notna()
+        & (dados_geracao["potencia"] > 0)
+        & dados_geracao["quantidade"].notna()
+        & (dados_geracao["quantidade"] > 0)
+        & dados_geracao["prognostico"].notna()
+        & (dados_geracao["prognostico"] > 0)
+    )
+
+    dados_validos = dados_geracao[mascara_valida].copy()
+
+    # Calcular capacidade máxima e filtrar
+    dados_validos["capacidade_maxima"] = dados_validos["potencia"] * 24
+    dados_validos = dados_validos[
+        (dados_validos["prognostico"] <= dados_validos["capacidade_maxima"])
+        & (dados_validos["quantidade"] <= dados_validos["capacidade_maxima"])
+    ]
+
+    # Extrair ano de forma eficiente
+    dados_validos["ano"] = pd.to_datetime(dados_validos["data"]).dt.year
+
+    # Agregar por ano usando numpy para maior velocidade
+    dados_anuais = dados_validos.groupby("ano").agg(
+        {"prognostico": "sum", "quantidade": "sum"}
+    )
+
+    if len(dados_anuais) < 4:
+        return None
+
+    # Criar array de anos completo
+    anos_range = np.arange(1999, 2025)
+    dados_completos = pd.DataFrame(index=anos_range)
+    dados_completos = dados_completos.join(dados_anuais)
+    dados_completos.fillna(0, inplace=True)
+
+    # Calcular ajuste de forma vetorizada
+    ano_inicial = dados_completos[dados_completos["prognostico"] > 0].index.min()
+    anos_desde_inicio = dados_completos.index - ano_inicial
+
+    # Vetorizar cálculo de ajuste
+    ajuste = np.where(
+        anos_desde_inicio <= 0,
+        1,
+        np.where(
+            anos_desde_inicio == 1, 0.975, 0.975 - (0.005 * (anos_desde_inicio - 1))
+        ),
+    )
+
+    dados_completos["previsao_ajustada"] = dados_completos["prognostico"] * ajuste
+
+    # Calcular desempenho de forma vetorizada
+    dados_completos["desempenho"] = np.where(
+        dados_completos["previsao_ajustada"] > 0,
+        dados_completos["quantidade"] / dados_completos["previsao_ajustada"],
+        0,
+    )
+    dados_completos["desempenho"] = dados_completos["desempenho"].round(2)
+
+    return dados_completos
 
 
-def is_invalid(row):
-  return math.isnan(row['potencia']) or row['potencia'] <= 0 or math.isnan(row['quantidade']) or row['quantidade'] <= 0 or math.isnan(row['prognostico']) or row['prognostico'] <= 0
+def verificar_problemas(desempenho_serie):
+    queda_minima = 0.05
+    queda_maxima = 0.1
 
-# Gerar o gráfico de desempenho de usinas
-id_usinas_analisadas = []
-TOTAL_USINAS_ANALISADAS = 0
-NUMERO_USINAS = 10
-
-
-def calcular_desempenho(id_usina, TOTAL_USINAS_ANALISADAS):
-  quantidade = [0] * 26
-  prognostico = [0] * 26
-  
-  table = pq.read_table(
-    './_data/geracao_mossoro.parquet',
-    columns=['id_usina', 'data', 'quantidade', 'prognostico', 'potencia'],
-    filters=[('id_usina', '==', id_usina)]
-  )
-  geracao = table.to_pandas()
-
-  for _, row in geracao.iterrows():
-
-    if is_invalid(row):
-      continue
-
-    potencia_maxima_dia = row['potencia'] * 24
-
-    # Detectar anomalias
-    if row['prognostico'] > potencia_maxima_dia or row['quantidade'] > potencia_maxima_dia:
-      continue
-
-    ano, _, _ = row['data'].split('-')
-    prognostico[int(ano) % 1999] += row['prognostico']
-    quantidade[int(ano) % 1999] += row['quantidade']
-
-  # Verificar se há dados de anos o suficiente
-  anos_ativos = 0
-  for valor in quantidade:
-    if valor > 0:
-      anos_ativos += 1
-  if anos_ativos < 4:
-    return TOTAL_USINAS_ANALISADAS
-
-  first_year_index = -1
-  prognostico_real = [0] * 26
-
-  for index in range(len(prognostico)):
-
-    if float(prognostico[index]) > 0:
-      if first_year_index < 0:
-        first_year_index = index
-
-      if first_year_index == index:
-        prognostico_real[index] = float(prognostico[index])
-      elif first_year_index + 1 == index:
-        prognostico_real[index] = float(prognostico[index]) * 0.975
-      elif first_year_index + 1 < index:
-        prognostico_real[index] = float(prognostico[index]) * (
-          0.975 - (0.005 * (index - (first_year_index + 1)))
+    desempenho_array = desempenho_serie.values
+    for i in range(len(desempenho_array) - 3):
+        valores = desempenho_array[i : i + 4]
+        quedas = (valores[:-1] - queda_minima >= valores[1:]) & (
+            valores[:-1] - queda_maxima < valores[1:]
         )
+        if quedas.sum() == 3:
+            return True
+    return False
 
 
-  anos = []
-  dados = []
+def processar_usinas(caminho_arquivo, limite_usinas=10):
+    # Ler dados uma única vez
+    dados_geracao = pd.read_csv(
+        caminho_arquivo,
+        usecols=["id_usina", "data", "quantidade", "prognostico", "potencia"],
+    )
 
-  for index in range(len(prognostico_real)):
-    anos.append(index + 1999)
+    # Obter usinas únicas
+    usinas_unicas = dados_geracao["id_usina"].unique()
 
-    if prognostico_real[index] == 0:
-      dados.append(0)
-    else:
-      valor = quantidade[index] / prognostico_real[index]
-      dados.append(float("%.2f" % valor))
+    for id_usina in usinas_unicas[:limite_usinas]:
+        # Filtrar dados da usina
+        dados_usina = dados_geracao[dados_geracao["id_usina"] == id_usina]
 
+        # Processar dados
+        resultados = processar_dados_usina(dados_usina, id_usina)
+        if resultados is None:
+            continue
 
-  defeituoso = False
-  BAIXA_MINIMA = 0.05
-  BAIXA_MAXIMA = 0.1
+        # Verificar problemas
+        problematica = verificar_problemas(resultados["desempenho"])
 
-  for index in range(len(dados) - 3):
-    contagem = 0
-
-    desempenho_ano_atual = float(dados[index])
-    desempenho_ano_atual_mais_1 = float(dados[index + 1])
-    desempenho_ano_atual_mais_2 = float(dados[index + 2])
-    desempenho_ano_atual_mais_3 = float(dados[index + 3])
-
-    if desempenho_ano_atual - BAIXA_MINIMA >= desempenho_ano_atual_mais_1 and desempenho_ano_atual - BAIXA_MAXIMA < desempenho_ano_atual_mais_1:
-      contagem += 1
-
-    if desempenho_ano_atual_mais_1 - BAIXA_MINIMA >= desempenho_ano_atual_mais_2 and desempenho_ano_atual_mais_1 - BAIXA_MAXIMA < desempenho_ano_atual_mais_2:
-      contagem += 1
-
-    if desempenho_ano_atual_mais_2 - BAIXA_MINIMA >= desempenho_ano_atual_mais_3 and desempenho_ano_atual_mais_2 - BAIXA_MAXIMA < desempenho_ano_atual_mais_3:
-      contagem += 1
-
-    if contagem == 3:
-      defeituoso = True
-
-  plt.plot(anos, dados, 'ro')
-  plt.grid()
-  plt.savefig(f"./analise_depreciacao/usinas/{'defeito' if defeituoso else 'comum'}/{id_usina}.png")
-  plt.clf()
-
-  return TOTAL_USINAS_ANALISADAS + 1
+        # Plotar
+        # plt.figure(figsize=(10, 6))
+        # plt.plot(resultados.index, resultados["desempenho"], "ro")
+        # plt.grid(True)
+        # plt.savefig(f"./usinas/{'defeito' if problematica else 'comum'}/{id_usina}.png")
+        # plt.close()
+        print(f"Usina {id_usina} {'com' if problematica else 'sem'} problemas")
 
 
-table = pq.read_table(
-  './_data/geracao_mossoro.parquet',
-  columns=['id_usina']
-)
-geracao = table.to_pandas()
-
-for _, row in geracao.iterrows():
-  if TOTAL_USINAS_ANALISADAS == NUMERO_USINAS:
-    break
-
-  if int(row['id_usina']) not in id_usinas_analisadas:
-    id_usinas_analisadas.append(int(row['id_usina']))
-    TOTAL_USINAS_ANALISADAS = calcular_desempenho(int(row['id_usina']), TOTAL_USINAS_ANALISADAS)
-  else:
-    continue
+if __name__ == "__main__":
+    processar_usinas("../_data/geracao_mossoro.csv", 10000)
