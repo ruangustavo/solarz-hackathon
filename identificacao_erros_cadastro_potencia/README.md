@@ -1,2 +1,0 @@
-- Como preparar os dados para o código?
-- Como executar o código?
