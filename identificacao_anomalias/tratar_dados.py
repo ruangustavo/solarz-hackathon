@@ -2,42 +2,26 @@ import pandas as pd
 import os
 
 def load_and_clean_data(file_path: str, clean_function):
-    """
-    Carrega um arquivo CSV e aplica uma função de limpeza específica.
-    """
     df = pd.read_csv(file_path)
     return clean_function(df)
 
 def clean_unidade_consumidora(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Limpa os dados de unidade consumidora.
-    """
     df = df.dropna(subset=["id_endereco"])
     df["id_endereco"] = df["id_endereco"].astype(int)
     return df
 
 def clean_usina(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Limpa os dados de usina.
-    """
     df = df.drop_duplicates()
     df = df.dropna(subset=["last_plant_history_id"])
     df["last_plant_history_id"] = df["last_plant_history_id"].astype(int)
     return df
 
 def clean_usina_historico(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Limpa os dados de histórico de usina.
-    """
     df['start_date'] = pd.to_datetime(df['start_date'], errors='coerce')
-    # df = df.dropna(subset=['performance'])
     df = df.drop(columns=['performance_type_enum'])
     return df
 
 def clean_endereco(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Limpa os dados de endereço.
-    """
     df = df.drop_duplicates()
     df = df.dropna(subset=["id_cidade"])
     df["id_cidade"] = df["id_cidade"].astype(int)
@@ -45,9 +29,6 @@ def clean_endereco(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def clean_cidade(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Limpa os dados de cidade.
-    """
     df = df.drop_duplicates()
     df = df.dropna(subset=["id_estado"])
     df["id_estado"] = df["id_estado"].astype(int)
@@ -56,9 +37,6 @@ def clean_cidade(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def merge_data(usina, unidade_consumidora, endereco, cidade):
-    """
-    Mescla os dados das diferentes tabelas em um único DataFrame.
-    """
     usina = usina.merge(
         unidade_consumidora,
         left_on="unidade_consumidora_id",
@@ -88,12 +66,8 @@ def merge_data(usina, unidade_consumidora, endereco, cidade):
     return usina
 
 def filter_and_merge_usina_historico(usina, usina_historico, cidade_nome: str) -> pd.DataFrame:
-    """
-    Filtra as usinas por cidade e adiciona informações de histórico de potência.
-    """
     usinas_filtradas = usina[usina['cidade_nome'] == cidade_nome]
 
-    # Obter IDs das usinas filtradas
     ids_usinas_filtradas = usinas_filtradas['id']
     
 

@@ -8,30 +8,20 @@ from sklearn.metrics import mean_absolute_percentage_error
 
 
 def preparar_dados(df):
-    """
-    Prepara os dados normalizando a geração pela potência instalada,
-    removendo valores problemáticos
-    """
-    # Remove registros com quantidade ou potência zero/nula
     df = df[
         (df["quantidade"] > 0)
         & (df["potencia"] > 0)
         & (~df["quantidade"].isna())
         & (~df["potencia"].isna())
     ].copy()
-
-    # Calcula geração relativa
     df["geracao_relativa"] = df["quantidade"] / df["potencia"]
 
-    # Remove outliers extremos
-    q1 = df["geracao_relativa"].quantile(0.01)  # 1%
-    q3 = df["geracao_relativa"].quantile(0.99)  # 1%
+    q1 = df["geracao_relativa"].quantile(0.01)
+    q3 = df["geracao_relativa"].quantile(0.99)
     df = df[(df["geracao_relativa"] >= q1) & (df["geracao_relativa"] <= q3)]
 
-    # Agrupa por _data e calcula média da geração relativa
     df_prep = df.groupby("data")["geracao_relativa"].mean().reset_index()
 
-    # Renomeia colunas para o Prophet
     df_prep.columns = ["ds", "y"]
     df_prep["ds"] = pd.to_datetime(df_prep["ds"])
 
@@ -39,9 +29,6 @@ def preparar_dados(df):
 
 
 def criar_modelo_prophet():
-    """
-    Cria modelo Prophet otimizado para previsão de geração relativa
-    """
     modelo = Prophet(
         yearly_seasonality=True,
         weekly_seasonality=True,
@@ -52,9 +39,6 @@ def criar_modelo_prophet():
 
 
 def desnormalizar_previsao(previsoes, potencia_alvo):
-    """
-    Converte previsões normalizadas para valores absolutos
-    """
     previsoes_copy = previsoes.copy()
     for col in ["yhat", "yhat_lower", "yhat_upper"]:
         previsoes_copy[col] = previsoes_copy[col] * potencia_alvo
@@ -62,9 +46,6 @@ def desnormalizar_previsao(previsoes, potencia_alvo):
 
 
 def avaliar_modelo(y_true, y_pred):
-    """
-    Calcula MAPE ignorando valores nulos (MAPE: Erro Percentual Absoluto Médio)
-    """
     mape = mean_absolute_percentage_error(y_true, y_pred)
     return mape * 100
 
