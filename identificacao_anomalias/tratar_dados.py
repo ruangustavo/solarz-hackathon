@@ -98,17 +98,11 @@ def filter_and_merge_usina_historico(usina, usina_historico, cidade_nome: str) -
     
 
     historico_usinas_filtradas = usina_historico[usina_historico['plant_id'].isin(ids_usinas_filtradas)]
-    print(len(usinas_filtradas['id']))
-    # usina_historico.to_csv('test4.csv')
-    # historico_usinas_filtradas.to_csv('test5.csv')
     historico_usinas_filtradas = historico_usinas_filtradas.dropna(subset=['plant_id'])
-    # historico_usinas_filtradas.to_csv('test3.csv')
     historico_usinas_sorted = historico_usinas_filtradas.sort_values(by=['plant_id', 'start_date'])
-    # historico_usinas_sorted.to_csv('test2.csv')
 
     historico_usina_atual = historico_usinas_sorted.groupby('plant_id').last().reset_index()
 
-    # historico_usina_atual.to_csv("test.csv")
 
     historico_usina_atual = historico_usina_atual.rename(columns={
         'power': 'current_power',
